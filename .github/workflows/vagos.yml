@@ -13,8 +13,7 @@ jobs:
       - name: Crear estructura y descargar base
         run: |
           mkdir -p VagOs-ISO/chroot
-          # Blindo la ejecucion con la variable DEF_MIRROR para que debootstrap no pueda usar el enlace roto de debian.org
-          export DEF_MIRROR="http://deb.debian.org/debian/"
+          export DEF_MIRROR="http://debian.org"
           sudo debootstrap --arch=amd64 bookworm VagOs-ISO/chroot "$DEF_MIRROR"
 
       - name: Configurar Gaming y Escritorio
@@ -25,14 +24,17 @@ jobs:
           sudo mount --bind /sys VagOs-ISO/chroot/sys
           sudo cp /etc/resolv.conf VagOs-ISO/chroot/etc/
 
-          # Inyectar comandos de gaming dentro del sistema
+          # Inyectar comandos de gaming aceptando licencias automaticamente
           sudo chroot VagOs-ISO/chroot /bin/bash -c "
             dpkg --add-architecture i386
-            echo 'deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list
-            echo 'deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list
+            echo 'deb http://debian.org bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list
+            echo 'deb http://debian.org bookworm-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list
+            
+            echo 'steam steam/question select I AGREE' | debconf-set-selections
+            echo 'steam steam/license note' | debconf-set-selections
+            
             apt-get update
-            # Instalar XFCE, Steam, Lutris y herramientas básicas
-            apt-get install -y ca-certificates xfce4 xfce4-goodies xorg lightdm network-manager-gnome pulseaudio pavucontrol firmware-linux mesa-vulkan-drivers libgl1-mesa-dri:i386 gamemode mangohud steam lutris sudo
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates xfce4 xfce4-goodies xorg lightdm network-manager-gnome pulseaudio pavucontrol firmware-linux mesa-vulkan-drivers libgl1-mesa-dri:i386 gamemode mangohud steam lutris sudo
             
             # Identidad VagOs
             echo 'NAME=\"VagOs\"' > /etc/os-release
@@ -42,7 +44,12 @@ jobs:
       - name: Empaquetar el sistema vivo (SquashFS)
         run: |
           mkdir -p VagOs-ISO/image/live
-          sudo mksquashfs VagOs-ISO/chroot VagOs-ISO/image/live/filesystem.squashfs -comp xz
+          # Desmontar carpetas virtuales antes de comprimir para no entrar en bucle infinito
+          sudo umount -l VagOs-ISO/chroot/dev || true
+          sudo umount -l VagOs-ISO/chroot/proc || true
+          sudo umount -l VagOs-ISO/chroot/sys || true
+          # Forzar la exclusion de los directorios problematicos
+          sudo mksquashfs VagOs-ISO/chroot VagOs-ISO/image/live/filesystem.squashfs -comp xz -e proc sys dev
 
       - name: Crear instalador ISO de arranque
         run: |
