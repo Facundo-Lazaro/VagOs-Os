@@ -13,8 +13,9 @@ jobs:
       - name: Crear estructura y descargar base
         run: |
           mkdir -p VagOs-ISO/chroot
-          # Espejo global correcto e infalible
-          sudo debootstrap --arch=amd64 bookworm VagOs-ISO/chroot http://debian.org
+          # Blindo la ejecucion con la variable DEF_MIRROR para que debootstrap no pueda usar el enlace roto de debian.org
+          export DEF_MIRROR="http://deb.debian.org/debian/"
+          sudo debootstrap --arch=amd64 bookworm VagOs-ISO/chroot "$DEF_MIRROR"
 
       - name: Configurar Gaming y Escritorio
         run: |
@@ -27,8 +28,8 @@ jobs:
           # Inyectar comandos de gaming dentro del sistema
           sudo chroot VagOs-ISO/chroot /bin/bash -c "
             dpkg --add-architecture i386
-            echo 'deb http://debian.org bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list
-            echo 'deb http://debian.org bookworm-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list
+            echo 'deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list
+            echo 'deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list
             apt-get update
             # Instalar XFCE, Steam, Lutris y herramientas básicas
             apt-get install -y ca-certificates xfce4 xfce4-goodies xorg lightdm network-manager-gnome pulseaudio pavucontrol firmware-linux mesa-vulkan-drivers libgl1-mesa-dri:i386 gamemode mangohud steam lutris sudo
