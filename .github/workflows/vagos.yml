@@ -1,0 +1,72 @@
+name: Build VagOs ISO
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar herramientas nativas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap squashfs-tools xorriso live-boot syslinux-common isolinux debian-archive-keyring
+
+      - name: Crear estructura y descargar base
+        run: |
+          mkdir -p VagOs-ISO/chroot
+          # Espejo global correcto e infalible
+          sudo debootstrap --arch=amd64 bookworm VagOs-ISO/chroot http://debian.org
+
+      - name: Configurar Gaming y Escritorio
+        run: |
+          # Montar componentes necesarios de red y hardware
+          sudo mount --bind /dev VagOs-ISO/chroot/dev
+          sudo mount --bind /proc VagOs-ISO/chroot/proc
+          sudo mount --bind /sys VagOs-ISO/chroot/sys
+          sudo cp /etc/resolv.conf VagOs-ISO/chroot/etc/
+
+          # Inyectar comandos de gaming dentro del sistema
+          sudo chroot VagOs-ISO/chroot /bin/bash -c "
+            dpkg --add-architecture i386
+            echo 'deb http://debian.org bookworm main contrib non-free non-free-firmware' > /etc/apt/sources.list
+            echo 'deb http://debian.org bookworm-security main contrib non-free non-free-firmware' >> /etc/apt/sources.list
+            apt-get update
+            # Instalar XFCE, Steam, Lutris y herramientas básicas
+            apt-get install -y ca-certificates xfce4 xfce4-goodies xorg lightdm network-manager-gnome pulseaudio pavucontrol firmware-linux mesa-vulkan-drivers libgl1-mesa-dri:i386 gamemode mangohud steam lutris sudo
+            
+            # Identidad VagOs
+            echo 'NAME=\"VagOs\"' > /etc/os-release
+            echo 'PRETTY_NAME=\"VagOs Gaming OS 1.0\"' >> /etc/os-release
+          "
+
+      - name: Empaquetar el sistema vivo (SquashFS)
+        run: |
+          mkdir -p VagOs-ISO/image/live
+          sudo mksquashfs VagOs-ISO/chroot VagOs-ISO/image/live/filesystem.squashfs -comp xz
+
+      - name: Crear instalador ISO de arranque
+        run: |
+          cd VagOs-ISO/image
+          mkdir -p isolinux
+          sudo cp /usr/lib/ISOLINUX/isolinux.bin isolinux/
+          sudo cp /usr/lib/syslinux/modules/bios/* isolinux/
+          
+          # Crear menu de arranque de VagOs
+          sudo cat <<'EOF' > isolinux/isolinux.cfg
+          default VagOs
+          label VagOs
+            kernel /live/vmlinuz
+            append initrd=/live/initrd.img boot=live quiet splash
+          EOF
+          
+          # Copiar el kernel de Debian
+          sudo cp ../chroot/boot/vmlinuz-* live/vmlinuz || sudo cp ../chroot/boot/vmlinuz live/vmlinuz
+          sudo cp ../chroot/boot/initrd.img-* live/initrd.img || sudo cp ../chroot/boot/initrd.img live/initrd.img
+          
+          # Fabricar la ISO final
+          sudo xorriso -as mkisofs -r -J -joliet-long -l -cache-inodes -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -partition_offset 16 -A "VagOs" -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -o ../../VagOs-v1.0.iso .
+
+      - name: Subir VagOs ISO final
+        uses: actions/upload-artifact@v4
+        with:
+          name: VagOs-Gaming-v1.0
+          path: VagOs-v1.0.iso
